@@ -209,6 +209,11 @@ type ImageOutput struct {
 	UpstreamEventType string
 	Data              []map[string]any
 	ChargeHandled     bool
+	// PartialImage carries an upstream progressive preview (base64) when the
+	// caller asked for partial_images. Only set on Kind == "progress".
+	PartialImage      string
+	PartialImageIndex int
+	OutputFormat      string
 }
 
 type ImageOutputProgressCallback func([]map[string]any)
@@ -316,6 +321,15 @@ func (o ImageOutput) Chunk() map[string]any {
 		"data":                []map[string]any{},
 	}
 	switch o.Kind {
+	case "progress":
+		if o.PartialImage != "" {
+			chunk["object"] = "image.generation.partial_image"
+			chunk["partial_image_b64"] = o.PartialImage
+			chunk["partial_image_index"] = o.PartialImageIndex
+			if o.OutputFormat != "" {
+				chunk["output_format"] = o.OutputFormat
+			}
+		}
 	case "message":
 		chunk["object"] = "image.generation.message"
 		chunk["message"] = o.Text
@@ -868,7 +882,7 @@ func (e *Engine) StreamResponsesImageOutputs(ctx context.Context, client *backen
 		seen := map[string]struct{}{}
 		for event := range events {
 			if event.PartialImage != "" {
-				out <- ImageOutput{Kind: "progress", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: event.Text, ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type}
+				out <- ImageOutput{Kind: "progress", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: event.Text, ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type, PartialImage: event.PartialImage, PartialImageIndex: event.PartialImageIndex, OutputFormat: firstNonEmpty(event.OutputFormat, request.OutputFormat)}
 				continue
 			}
 			if isFinalImageTextEvent(event) {
